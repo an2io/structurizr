@@ -33,7 +33,7 @@
                     <div id="banner"></div>
                     <div class="row">
                         <div class="col-2">
-                            <a href="<c:out value="${urlPrefix}" /><c:out value="${urlSuffix}" escapeXml="false" />"><img src="/static/img/structurizr-banner-light.png" alt="Structurizr" class="img-light img-responsive workspaceLogo" /><img src="/static/img/structurizr-banner-dark.png" alt="Structurizr" class="img-dark img-responsive workspaceLogo" /></a>
+                            <a href="<c:out value="${urlPrefix}" /><c:out value="${urlSuffix}" escapeXml="false" />"><img src="/static/img/structurizr-logo.png" alt="Structurizr" class="img-light workspaceLogo" style="height: 30px; width: auto;" /><img src="/static/img/structurizr-logo.png" alt="Structurizr" class="img-dark workspaceLogo" style="height: 30px; width: auto;" /></a>
                         </div>
                         <div class="col-10 centered">
                             <div class="centered">
@@ -1040,7 +1040,7 @@
         });
 
         const diagramViewport = document.getElementById('diagram-viewport');
-        diagramViewport.style.touchAction = 'pan-x pan-y';
+        diagramViewport.style.touchAction = 'none';
 
         // Mouse wheel / trackpad zoom (workstation): plain scroll now zooms in/out.
         // (ctrl/cmd + scroll and trackpad pinch, which the browser reports as ctrl+wheel, also zoom.)
@@ -1061,14 +1061,15 @@
 
         // --- iOS / iPadOS (Safari/WebKit) touch gestures ---
 
-        // Pinch to zoom + two-finger drag to pan (smooth). Safari/WebKit gesture events provide a
-        // cumulative scale and a centroid (clientX/clientY) for the two fingers. We pin the paper
-        // point grabbed at gesturestart under the moving/spreading centroid, which yields smooth
-        // zoom-about-the-fingers AND two-finger panning in a single gesture.
-        var gestureStartScale = 1.0, gestureAnchorX = 0, gestureAnchorY = 0;
+        // Two-finger pinch = ZOOM ONLY, kept centred on the FIXED start midpoint. We deliberately do
+        // NOT chase the live (jittery) centroid each frame - that caused the shaking when zoomed in
+        // past fit. Panning is the separate one-finger gesture below.
+        var gestureStartScale = 1.0, gestureAnchorX = 0, gestureAnchorY = 0, gestureCentroidX = 0, gestureCentroidY = 0;
         diagramViewport.addEventListener('gesturestart', function(event) {
             gestureStartScale = (structurizr.diagram.getZoomScale ? structurizr.diagram.getZoomScale() : 1.0);
             const rect = diagramViewport.getBoundingClientRect();
+            gestureCentroidX = event.clientX;
+            gestureCentroidY = event.clientY;
             gestureAnchorX = (diagramViewport.scrollLeft + (event.clientX - rect.left)) / gestureStartScale;
             gestureAnchorY = (diagramViewport.scrollTop + (event.clientY - rect.top)) / gestureStartScale;
             event.preventDefault();
@@ -1076,17 +1077,47 @@
         diagramViewport.addEventListener('gesturechange', function(event) {
             const newScale = Math.max(0.1, gestureStartScale * event.scale);
             structurizr.diagram.zoomTo(newScale);
-            // keep the grabbed paper point under the current two-finger centroid (zoom-centre + pan)
-            structurizr.diagram.scrollToPoint(gestureAnchorX, gestureAnchorY, event.clientX, event.clientY);
+            structurizr.diagram.scrollToPoint(gestureAnchorX, gestureAnchorY, gestureCentroidX, gestureCentroidY);
             event.preventDefault();
         }, { passive: false });
-        diagramViewport.addEventListener('gestureend', function(event) {
-            event.preventDefault();
+        diagramViewport.addEventListener('gestureend', function(event) { event.preventDefault(); }, { passive: false });
+
+        // One-finger drag on EMPTY canvas = pan; one finger on a diagram element = let the diagram
+        // handle it (move/select). Double-tap an element = drill in (reuses the double-click handler).
+        var touchPanning = false, touchMoved = false;
+        var panStartX = 0, panStartY = 0, panScrollLeft = 0, panScrollTop = 0;
+        var lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+
+        diagramViewport.addEventListener('touchstart', function(event) {
+            touchPanning = false;
+            if (event.touches.length !== 1) { return; }
+            const onElement = event.target.closest && event.target.closest('[model-id], .joint-cell');
+            if (!onElement) {
+                const touch = event.touches[0];
+                touchPanning = true;
+                touchMoved = false;
+                panStartX = touch.clientX;
+                panStartY = touch.clientY;
+                panScrollLeft = diagramViewport.scrollLeft;
+                panScrollTop = diagramViewport.scrollTop;
+            }
         }, { passive: false });
 
-        // Double-tap an element to drill in (reuses the existing mouse double-click handler).
-        var lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+        diagramViewport.addEventListener('touchmove', function(event) {
+            if (touchPanning && event.touches.length === 1) {
+                const touch = event.touches[0];
+                const dx = touch.clientX - panStartX;
+                const dy = touch.clientY - panStartY;
+                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) { touchMoved = true; }
+                diagramViewport.scrollLeft = panScrollLeft - dx;
+                diagramViewport.scrollTop = panScrollTop - dy;
+                event.preventDefault();
+            }
+        }, { passive: false });
+
         diagramViewport.addEventListener('touchend', function(event) {
+            if (touchPanning && touchMoved) { touchPanning = false; return; } // was a pan, not a tap
+            touchPanning = false;
             if (event.changedTouches.length !== 1) {
                 return;
             }

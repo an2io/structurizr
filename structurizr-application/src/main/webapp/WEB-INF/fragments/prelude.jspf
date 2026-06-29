@@ -65,7 +65,7 @@
                     <a id="workspaceLogoAnchor" href="/">
                     </c:otherwise>
                 </c:choose>
-                <img src="/static/img/structurizr-banner-light.png" alt="Structurizr" class="img-light img-responsive workspaceLogo" /><img src="/static/img/structurizr-banner-dark.png" alt="Structurizr" class="img-dark img-responsive workspaceLogo" /></a>
+                <img src="/static/img/structurizr-logo.png" alt="Structurizr" class="img-light workspaceLogo" style="height: 30px; width: auto;" /><img src="/static/img/structurizr-logo.png" alt="Structurizr" class="img-dark workspaceLogo" style="height: 30px; width: auto;" /></a>
             </div>
             <div class="col-10 centered" style="text-align: right;">
                 <c:if test="${searchEnabled}">
