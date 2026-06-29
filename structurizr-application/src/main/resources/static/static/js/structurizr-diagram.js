@@ -4596,6 +4596,12 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         return scale;
     };
 
+    this.zoomToAroundClientPoint = function(zoomScale, clientX, clientY) {
+        const localPoint = paper.clientToLocalPoint(clientX, clientY);
+        self.zoomTo(zoomScale);
+        self.scrollToPoint(localPoint.x, localPoint.y, clientX, clientY);
+    };
+
     this.getPossibleViewportWidth = function() {
         return parentElement.innerWidth();
     };
