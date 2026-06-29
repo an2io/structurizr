@@ -1,4 +1,6 @@
-# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# Builds the project with Maven, publishes the runnable WAR(s) as downloadable
+# workflow artifacts, and builds/pushes a Docker image to GitHub Container
+# Registry (ghcr.io) — no Docker Hub account required.
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
 
 # This workflow uses actions that are not certified by GitHub.
@@ -6,13 +8,14 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Java CI with Maven
+name: Build and publish WAR + Docker image
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:        # adds a manual "Run workflow" button
 
 jobs:
   build:
@@ -29,3 +32,68 @@ jobs:
         cache: maven
     - name: Build with Maven
       run: mvn -B -DexcludedGroups=IntegrationTest package --file pom.xml
+
+    - name: Upload application WAR (Structurizr Lite / server)
+      uses: actions/upload-artifact@v4
+      with:
+        name: structurizr-application-war
+        path: structurizr-application/target/structurizr-*.war
+        if-no-files-found: error
+        retention-days: 30
+
+    - name: Upload MCP server WAR
+      uses: actions/upload-artifact@v4
+      with:
+        name: structurizr-mcp-war
+        path: structurizr-mcp/target/structurizr-mcp-*.war
+        if-no-files-found: error
+        retention-days: 30
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    # Skip image publishing for pull requests (a PR's GITHUB_TOKEN is read-only).
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write          # lets GITHUB_TOKEN push to ghcr.io — no extra account/secret
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # Reuse the WAR built by the previous job instead of rebuilding it.
+    # The noble Dockerfile does `COPY structurizr-application/target/structurizr-*.war`.
+    - name: Download application WAR
+      uses: actions/download-artifact@v4
+      with:
+        name: structurizr-application-war
+        path: structurizr-application/target
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Derive image tags and labels
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}
+        tags: |
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,format=short
+          type=ref,event=branch
+
+    - name: Build and push image
+      uses: docker/build-push-action@v6
+      with:
+        context: .              # repo root: Dockerfile COPYs target/*.war + structurizr-themes
+        file: structurizr-application/Dockerfiles/eclipse-temurin-noble
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
