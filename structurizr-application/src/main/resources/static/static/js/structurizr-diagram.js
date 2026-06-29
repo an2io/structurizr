@@ -4592,6 +4592,10 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
         paper.scale(scale);
     };
 
+    this.getZoomScale = function() {
+        return scale;
+    };
+
     this.getPossibleViewportWidth = function() {
         return parentElement.innerWidth();
     };

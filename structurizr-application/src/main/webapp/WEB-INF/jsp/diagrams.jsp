@@ -1061,21 +1061,23 @@
 
         // --- iOS / iPadOS (Safari/WebKit) touch gestures ---
 
-        // Pinch to zoom (gesture events report a cumulative scale since gesturestart).
-        var pinchLastScale = 1.0;
+        // Pinch to zoom + two-finger drag to pan (smooth). Safari/WebKit gesture events provide a
+        // cumulative scale and a centroid (clientX/clientY) for the two fingers. We pin the paper
+        // point grabbed at gesturestart under the moving/spreading centroid, which yields smooth
+        // zoom-about-the-fingers AND two-finger panning in a single gesture.
+        var gestureStartScale = 1.0, gestureAnchorX = 0, gestureAnchorY = 0;
         diagramViewport.addEventListener('gesturestart', function(event) {
-            pinchLastScale = 1.0;
+            gestureStartScale = (structurizr.diagram.getZoomScale ? structurizr.diagram.getZoomScale() : 1.0);
+            const rect = diagramViewport.getBoundingClientRect();
+            gestureAnchorX = (diagramViewport.scrollLeft + (event.clientX - rect.left)) / gestureStartScale;
+            gestureAnchorY = (diagramViewport.scrollTop + (event.clientY - rect.top)) / gestureStartScale;
             event.preventDefault();
         }, { passive: false });
         diagramViewport.addEventListener('gesturechange', function(event) {
-            const ratio = event.scale / pinchLastScale;
-            if (ratio > 1.1) {
-                structurizr.diagram.zoomIn(event);
-                pinchLastScale = event.scale;
-            } else if (ratio < 0.9) {
-                structurizr.diagram.zoomOut(event);
-                pinchLastScale = event.scale;
-            }
+            const newScale = Math.max(0.1, gestureStartScale * event.scale);
+            structurizr.diagram.zoomTo(newScale);
+            // keep the grabbed paper point under the current two-finger centroid (zoom-centre + pan)
+            structurizr.diagram.scrollToPoint(gestureAnchorX, gestureAnchorY, event.clientX, event.clientY);
             event.preventDefault();
         }, { passive: false });
         diagramViewport.addEventListener('gestureend', function(event) {
