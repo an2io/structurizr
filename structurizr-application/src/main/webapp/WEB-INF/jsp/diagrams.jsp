@@ -125,6 +125,7 @@
 
                 <div class="btn-group">
                     <button id="zoomOutButton" class="btn btn-default" title="Zoom out [-]"><img src="/static/bootstrap-icons/zoom-out.svg" class="icon-btn" /></button>
+                    <button id="zoomResetButton" class="btn btn-default" title="Reset zoom / fit [0]"><img src="/static/bootstrap-icons/aspect-ratio.svg" class="icon-btn" /></button>
                     <button id="zoomInButton" class="btn btn-default" title="Zoom in [+]"><img src="/static/bootstrap-icons/zoom-in.svg" class="icon-btn" /></button>
                 </div>
                 <button id="enterFullScreenButton" class="btn btn-default" title="Enter Full Screen [f]"><img src="/static/bootstrap-icons/fullscreen.svg" class="icon-btn" /></button>
@@ -138,6 +139,7 @@
                     $('#embeddedExportButton').click(function() { exportToImages(); });
 
                     $('#zoomOutButton').click(function() { structurizr.diagram.zoomOut(); });
+                    $('#zoomResetButton').click(function() { structurizr.diagram.zoomToWidthOrHeight(); });
                     $('#zoomInButton').click(function() { structurizr.diagram.zoomIn(); });
 
                     $('#enterFullScreenButton').click(function() { enterPresentationMode(); });
@@ -791,6 +793,7 @@
             const plus = 43;
             const equals = 61;
             const minus = 45;
+            const zero = 48;
             const comma = 44;
             const dot = 46;
             const a = 97;
@@ -848,6 +851,9 @@
                 e.preventDefault();
             } else if (e.which === minus) {
                 structurizr.diagram.zoomOut();
+                e.preventDefault();
+            } else if (e.which === zero) {
+                structurizr.diagram.zoomToWidthOrHeight();
                 e.preventDefault();
             } else if (e.which === w) {
                 structurizr.diagram.zoomFitWidth();
@@ -1033,21 +1039,76 @@
             }
         });
 
-        document.getElementById('diagram-viewport').addEventListener('wheel', function(event) {
-                if (event.ctrlKey === true) {
-                    if (event.wheelDelta > 0) {
-                        structurizr.diagram.zoomIn(event);
-                    } else {
-                        structurizr.diagram.zoomOut(event);
-                    }
+        const diagramViewport = document.getElementById('diagram-viewport');
+        diagramViewport.style.touchAction = 'pan-x pan-y';
 
-                    event.preventDefault();
-                    event.stopPropagation();
+        // Mouse wheel / trackpad zoom (workstation): plain scroll now zooms in/out.
+        // (ctrl/cmd + scroll and trackpad pinch, which the browser reports as ctrl+wheel, also zoom.)
+        diagramViewport.addEventListener('wheel', function(event) {
+                const delta = (event.deltaY !== undefined && event.deltaY !== 0) ? -event.deltaY : event.wheelDelta;
+                if (delta > 0) {
+                    structurizr.diagram.zoomIn(event);
+                } else if (delta < 0) {
+                    structurizr.diagram.zoomOut(event);
                 }
+
+                event.preventDefault();
+                event.stopPropagation();
             },
             {
                 passive: false
             });
+
+        // --- iOS / iPadOS (Safari/WebKit) touch gestures ---
+
+        // Pinch to zoom (gesture events report a cumulative scale since gesturestart).
+        var pinchLastScale = 1.0;
+        diagramViewport.addEventListener('gesturestart', function(event) {
+            pinchLastScale = 1.0;
+            event.preventDefault();
+        }, { passive: false });
+        diagramViewport.addEventListener('gesturechange', function(event) {
+            const ratio = event.scale / pinchLastScale;
+            if (ratio > 1.1) {
+                structurizr.diagram.zoomIn(event);
+                pinchLastScale = event.scale;
+            } else if (ratio < 0.9) {
+                structurizr.diagram.zoomOut(event);
+                pinchLastScale = event.scale;
+            }
+            event.preventDefault();
+        }, { passive: false });
+        diagramViewport.addEventListener('gestureend', function(event) {
+            event.preventDefault();
+        }, { passive: false });
+
+        // Double-tap an element to drill in (reuses the existing mouse double-click handler).
+        var lastTapTime = 0, lastTapX = 0, lastTapY = 0;
+        diagramViewport.addEventListener('touchend', function(event) {
+            if (event.changedTouches.length !== 1) {
+                return;
+            }
+            const touch = event.changedTouches[0];
+            const dt = event.timeStamp - lastTapTime;
+            const dx = Math.abs(touch.clientX - lastTapX);
+            const dy = Math.abs(touch.clientY - lastTapY);
+
+            if (lastTapTime > 0 && dt < 350 && dx < 30 && dy < 30) {
+                lastTapTime = 0;
+                const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+                if (targetElement) {
+                    targetElement.dispatchEvent(new MouseEvent('dblclick', {
+                        bubbles: true, cancelable: true, view: window,
+                        clientX: touch.clientX, clientY: touch.clientY
+                    }));
+                }
+                event.preventDefault();
+            } else {
+                lastTapTime = event.timeStamp;
+                lastTapX = touch.clientX;
+                lastTapY = touch.clientY;
+            }
+        }, { passive: false });
     }
 
     function changeView(view, callback) {
