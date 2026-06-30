@@ -4597,9 +4597,19 @@ structurizr.ui.Diagram = function(id, diagramIsEditable, constructionCompleteCal
     };
 
     this.zoomToAroundClientPoint = function(zoomScale, clientX, clientY) {
-        const localPoint = paper.clientToLocalPoint(clientX, clientY);
+        // Scroll-aware zoom about a screen point. We derive paper coords from the viewport's own
+        // scroll/size rather than paper.clientToLocalPoint(), whose clientMatrix() = cells.getScreenCTM()
+        // ignores the scroll offset of the overflow:scroll viewport <div> (structurizr pans via scroll,
+        // not a paper transform) - which made the zoom anchor to the un-scrolled canvas once zoomed in.
+        const rect = viewport[0].getBoundingClientRect();
+        const cxRel = clientX - rect.left;
+        const cyRel = clientY - rect.top;
+        const oldScale = scale;
+        const paperX = (viewport.scrollLeft() + cxRel) / oldScale;
+        const paperY = (viewport.scrollTop() + cyRel) / oldScale;
         self.zoomTo(zoomScale);
-        self.scrollToPoint(localPoint.x, localPoint.y, clientX, clientY);
+        viewport.scrollLeft(paperX * zoomScale - cxRel);
+        viewport.scrollTop(paperY * zoomScale - cyRel);
     };
 
     this.getPossibleViewportWidth = function() {
